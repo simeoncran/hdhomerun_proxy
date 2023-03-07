@@ -16,11 +16,13 @@ The proxies communicate with each other via a TCP connection.
 ## How it works
 When an HDHomeRun app starts up, it broadcasts a discovery request. Normally
 the tuner would receive this request and reply with information about the
-tuner, including its IP address.
+tuner, including its IP address. However broadcasts cannot be received outside
+of the network that they originate on, so when the tuner and the apps are
+on different networks the apps won't be able to find the tuner. 
 
 The **tuner proxy** listens for these discovery request broadcasts on the app's
 network and forwards them to the **app proxy** running on the tuner's network, and
-relays the reply back.
+relays the reply back. This allows the apps to find the tuners so they can communicate.
 
 Note that only the broadcast packets are relayed. The proxy does not do anything
 with the video data. However as long as there is a route between the app's network
@@ -34,9 +36,11 @@ connection between the proxies and for the video data. The WireGuard connection
 has around 19 Mbps bandwidth and can easily handle multiple video streams.
 
 ## Running it
-Shell scripts are provided to start the proxies in Docker.
+Shell scripts are provided to start the proxies in Docker. You will need to
+modify the <code>*_start.sh</code> scripts to point to the address where you
+will run the app proxy.
 
-On the network where the tuner is:
+Then on the network where the tuner is:
 
 ```
 app_proxy_start.sh
@@ -47,4 +51,5 @@ On the network where the apps are:
 tuner_proxy_start.sh
 ```
 
-The scripts ensure that the docker containers will restart automatically, so you should only need to run these commands once.
+The scripts ensure that the docker containers will restart automatically, so you should only
+need to run these commands once.
