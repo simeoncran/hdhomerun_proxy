@@ -3,7 +3,6 @@
 import asyncio
 import functools
 import os
-import socket
 import struct
 import sys
 from typing import Optional
@@ -47,6 +46,7 @@ class AppProxy:
 
         # Implementation of DatagramProtocol
         def datagram_received(self, data, addr):
+            log(f'Reply received: {len(data)} bytes from tuner')
             self.reply_callback(data)
 
         async def query_tuner_async(self, query_data):
@@ -79,6 +79,7 @@ class AppProxy:
 
         # Protocol implementation.
         def data_received(self, data):
+            log(f'Request received: {len(data)} bytes from tuner proxy')
             # Convert the stream data into a message.
             AppProxy.codec.decode(data, self.on_received_message)
 
