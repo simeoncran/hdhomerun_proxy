@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import platform
 import socket
 import struct
 import sys
@@ -18,6 +19,8 @@ HDHOMERUN_DISCOVER_UDP_PORT=65001
 TCP_PORT = HDHOMERUN_DISCOVER_UDP_PORT
 
 DEBUG = 'DEBUG' in os.environ
+
+on_windows = platform.system() == "Windows"
 
 def log(str: str):
     print(str, file=sys.stderr)
@@ -70,6 +73,11 @@ class UdpProtocol:
         # Ignore datagrams until the tcp_transport is available.
         if tcp_transport:
             ip, port = addr
+            # NOTE: Windows requires us to bind to 0.0.0.0 in order to receive
+            # broadcast packets, and with asyncio there doesn't seem to be a good
+            # way to know what the destination address is. As a result, we will
+            # respond to anything sent to 65001, not just broadcasts.
+
             # We received a broadcast from the HDHomeRun app. Package it up into
             # a message containing the source address, port, and payload and send
             # it to the app_proxy. When or if a response comes back, it will
@@ -83,7 +91,7 @@ class UdpProtocol:
             encoded_message = codec.encode(message)
 
             log(f'Request received: {len(data)} bytes from app at {ip}:{port}')
-            
+
             if DEBUG:
                 log(f'Sending {len(encoded_message)} bytes to app proxy')
 
@@ -108,11 +116,18 @@ async def run_async(app_proxy_host):
                 app_proxy_host, TCP_PORT)
 
 
+            if DEBUG:
+                log('Creating UDP broadcast listener')
+
             global udp_transport
             udp_transport, _udp_protocol = await loop.create_datagram_endpoint(
                 lambda: UdpProtocol(),
-                local_addr=('255.255.255.255', HDHOMERUN_DISCOVER_UDP_PORT),
-                reuse_port=True,
+                # Windows won't let us bind to 255.255.255.255. We bind to 0.0.0.0 instead
+                # which means that we will receive all packets sent to 65001 on any
+                # interface, which includes broadcast packets.
+                local_addr=('0.0.0.0' if on_windows else '255.255.255.255', HDHOMERUN_DISCOVER_UDP_PORT),
+                # reuse_port is not supported on Windows.
+                reuse_port=not on_windows,
                 allow_broadcast=True)
 
             # We are running. Wait here until the connection is lost.
@@ -121,16 +136,21 @@ async def run_async(app_proxy_host):
         except OSError as exc:
             if exc.errno == -2:
                 log(f'Unknown host: {app_proxy_host}')
-                sys.exit(-1)
             elif exc.errno == 98:
                 log('Address is in use. Is the proxy already running?')
-                sys.exit(-1)
+            else:
+                log(f'Error: {exc}')
+            sys.exit(-1)
 
         finally:
             if tcp_transport:
+                if DEBUG:
+                    log('Cleaning up tcp_transport')
                 tcp_transport.close()
                 tcp_transport = None
             if udp_transport:
+                if DEBUG:
+                    log('Cleaning up udp_transport')
                 udp_transport.close()
                 udp_transport = None
 
@@ -144,6 +164,6 @@ if __name__ == '__main__':
     if len(sys.argv) < 2 or len(sys.argv) > 2:
         log(f'{sys.argv[0]} <app_proxy_host_address>')
         sys.exit(-1)
-    
+
     asyncio.run(run_async(sys.argv[1]))
 
